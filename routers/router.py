@@ -1,13 +1,21 @@
-from fastapi import APIRouter,HTTPException
+import sys
+from fastapi import FastAPI,APIRouter,HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
 from starlette import status
-
 from schemas.message import Message
-from config import loop, KAFKA_BOOTSTRAP_SERVERS, KAFKA_CONSUMER_GROUP, KAFKA_TOPIC
+from config import loop, KAFKA_BOOTSTRAP_SERVERS, KAFKA_CONSUMER_GROUP, ACCOUNT_TOPIC, ORDER_TOPIC
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 import json
+from PyQt5.QtGui import *
+from PyQt5.QtCore import *
+from PyQt5.QAxContainer import *
+from PyQt5.QtWidgets import *
+from indi.indiApp import indiWindow
 
 route = APIRouter()
+
+# -----------------------------------------------------------
 
 @route.post('/create_message', status_code=status.HTTP_201_CREATED)
 async def send(message: Message):
@@ -16,7 +24,7 @@ async def send(message: Message):
     try:
         await producer.start()
         value_json = json.dumps(message.__dict__).encode('utf-8')
-        await producer.send_and_wait(topic=KAFKA_TOPIC, value=value_json)
+        await producer.send_and_wait(topic=ACCOUNT_TOPIC, value=value_json)
 
         return JSONResponse(
             status_code=status.HTTP_201_CREATED,
@@ -54,15 +62,19 @@ async def send(message: Message):
         await producer.stop()
 
 async def consume():
-    consumer = AIOKafkaConsumer(KAFKA_TOPIC, loop=loop,
+    consumer = AIOKafkaConsumer(ACCOUNT_TOPIC, loop=loop,
                                 bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS, group_id=KAFKA_CONSUMER_GROUP)
     await consumer.start()
     try:
         async for msg in consumer:
             msg_str = msg.value.decode('utf-8')
             msg_dict = json.loads(msg_str)
-
-            print(f'Received message with value: {msg_dict["message"]}')
+            print(msg_dict["stockCode"])
+            print(f'Received message with value: {msg_dict["stockCode"]}')
+            
+            print("실행완")
+            
 
     finally:
         await consumer.stop()
+
