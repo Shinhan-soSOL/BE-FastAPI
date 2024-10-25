@@ -99,18 +99,12 @@ def update_or_insert_assets(account_id, assets):
             connection.close()
 
 # 히스토리 저장
-def save_to_history(stock_code, quantity, result, current_balance, user_id):
+def save_to_history(stock_code, quantity, trade_price, result_change, stockName, user_id):
     connection = create_connection()
     if connection:
         try:
             cursor = connection.cursor()
-
-            # result에서 필요한 값 추출
-            stock_name = result['stock_name']  # 종목명
-            trade_price = result['current_price']  # 현재가
-            # result_change 계산 (잔액 - 현재가 * 수량)
-            result_change = current_balance - (trade_price * quantity)
-
+          
             # 현재 날짜와 시간을 trade_date로 저장
             trade_date = 'NOW()'
             insert_query = """
@@ -119,7 +113,7 @@ def save_to_history(stock_code, quantity, result, current_balance, user_id):
             """
             cursor.execute(insert_query, (
                 user_id,
-                stock_name,
+                stockName,
                 stock_code,
                 quantity,
                 trade_price,
@@ -154,6 +148,38 @@ def update_small_change(account_id, result_change):
             print("잔돈 테이블이 성공적으로 업데이트되었습니다.")
         except Error as e:
             print(f"잔돈 테이블 업데이트 에러: {e}")
+        finally:
+            cursor.close()
+            connection.close()
+
+def update_account_list(account_id, cir_price):
+    connection = create_connection()
+    if connection:
+        try:
+            cursor = connection.cursor()
+            # 현재 balance 값을 조회
+            select_query = """
+                SELECT balance
+                FROM account_list
+                WHERE account_id = %s
+            """
+            cursor.execute(select_query, (account_id,))
+            current_balance = cursor.fetchone()[0]  # balance 값 가져오기
+            print(current_balance)
+            # 새로운 balance 값 계산
+            new_balance = current_balance - cir_price
+
+            update_query = """
+                UPDATE account_list
+                SET balance = %s
+                WHERE account_id = %s
+            """
+            cursor.execute(update_query, (new_balance, account_id))
+            connection.commit()  # 변경 사항 적용
+            print(f"Account {account_id} balance updated to {new_balance}")
+
+        except Error as e:
+            print(f"계좌 업데이트 에러: {e}")
         finally:
             cursor.close()
             connection.close()
@@ -201,6 +227,7 @@ async def get_order(request: Request):
     currentBalance = data.get("currentBalance")
     user_id = data.get("user_id")
     account_id = data.get("account_id")
+    stockName = data.get("stockName")
 
     result = await indi_app_instance.order_stock(stockCode, quantity)
     print(result)
@@ -208,9 +235,28 @@ async def get_order(request: Request):
     # 잔액 - 현재가 * 수량
     # 히스토리, 잔돈 업데이트
     if result['status'] == 200:
-        result_change = currentBalance - (result['result']['current_price'] * quantity)
-        save_to_history(stockCode, quantity, result['result'], currentBalance, user_id)
+        # Msg1에서 숫자 부분만 추출 (총주문금액)
+        order_num = result['result'][0]['Order_Num']
+        trimmed_order_num = order_num.lstrip('0')
+        result2 = await indi_app_instance.read_trade()
+
+        trade_price = 0
+        trade_quantity = 0
+
+        if result2['status'] == 200:
+            for trade in result2['result']:
+                if trade[0].lstrip('0') == trimmed_order_num:  # 주문 번호가 일치하는지 확인
+                    trade_quantity = trade[1]  # 체결 수량
+                    trade_price = trade[2]  # 체결 단가
+                    break  # 원하는 주문번호를 찾으면 루프를 종료
+        print(f"거래가격 {trade_price}")
+        print(f"거래수량 {trade_quantity}")
+        cir_price = int(int(trade_price) * int(trade_quantity))
+        result_change = currentBalance - cir_price
+        print(result_change)
+        save_to_history(stockCode, quantity, trade_price, result_change, stockName, user_id)
         update_small_change(account_id, result_change)
+        update_account_list(account_id, cir_price)
 
     return {"data": result}
 

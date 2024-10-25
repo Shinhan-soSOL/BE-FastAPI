@@ -4,5 +4,6 @@ class Message(BaseModel):
     stockCode: str
     currentBalance: int
     quantity: int
-    user_id: int
-    account_id: int
+    userId: int
+    accountId: int
+    stockName: str

@@ -10,6 +10,7 @@ import GiExpertControl as TRShow
 from dotenv import load_dotenv
 import os
 import asyncio
+from datetime import datetime
 
 # load .env
 load_dotenv()
@@ -65,10 +66,52 @@ class indiApp(QMainWindow):
         # 실시간 데이터 callback
         # RTShow.SetCallBack('ReceiveRTData', self.RTShow_ReceiveRTData)
     
+    async def read_trade(self):
+        gaejwa_text = GAEJWA
+        PW_text = GAEJWA_PW
+        TR_Name = "SABA231Q1"
+        today_str = datetime.now().strftime('%Y%m%d')
+
+        ret = TRShow.SetQueryName(TR_Name)
+        ret = TRShow.SetSingleData(0, today_str)
+        ret = TRShow.SetSingleData(1, gaejwa_text)
+        ret = TRShow.SetSingleData(2, PW_text)
+        ret = TRShow.SetSingleData(3, "00")
+        ret = TRShow.SetSingleData(4, "1")
+        ret = TRShow.SetSingleData(5, "1")
+        ret = TRShow.SetSingleData(6, "*")
+        ret = TRShow.SetSingleData(7, "")
+        ret = TRShow.SetSingleData(8, "Y")
+
+        rqid = TRShow.RequestData()
+        # Error
+        err_code = print(TRShow.GetErrorCode())
+        err_msg = print(TRShow.GetErrorMessage())
+
+        print(type(rqid))
+        print('Request Data rqid: ' + str(rqid))
+        if str(rqid) == '0':
+            return {"status": 502, "result": "전달 오류"}
+        
+        # ReceiveData 구분용
+        self.rqidD[rqid] = TR_Name
+
+        # Response 전달용
+        temp = await wait_data(rqid, self.tempResult)
+        self.tempResult = {}
+
+        # error handling
+        if temp == 0:
+            return {"status": 500, "result": "error"}
+        elif err_code == '0':
+            return {"status": 500, "result": err_msg}
+        else:
+            return {"status": 200, "result": temp}
+
+
     async def read_jango(self):
         gaejwa_text = GAEJWA
         PW_text = GAEJWA_PW
-        print("aaaa")
         TR_Name = "SABA200QB"
         ret = TRShow.SetQueryName(TR_Name)          
         ret = TRShow.SetSingleData(0,gaejwa_text)
@@ -107,7 +150,7 @@ class indiApp(QMainWindow):
         PW_text = GAEJWA_PW
         order_type ="2" # 매수
         code = stockcode # 에스코넥
-        count = quantity
+        count = str(quantity)
         call_type="1"
         price="" # 시장가일때 ""
         
@@ -204,11 +247,13 @@ class indiApp(QMainWindow):
             nCnt = giCtrl.GetSingleRowCount()
             print("nCnt : ",nCnt)
             try:
-                tr_data_output['Order_Num'] = giCtrl.GetSingleData(0)
-                tr_data_output['Num'] = giCtrl.GetSingleData(2)
-                tr_data_output['Msg1'] = giCtrl.GetSingleData(3)
-                tr_data_output['Msg2'] = giCtrl.GetSingleData(4)
-                tr_data_output['Msg3'] = giCtrl.GetSingleData(5)
+                row_data = {}
+                row_data['Order_Num'] = str(giCtrl.GetSingleData(0))
+                row_data['Num'] = str(giCtrl.GetSingleData(2))
+                row_data['Msg1'] = str(giCtrl.GetSingleData(3))
+                row_data['Msg2'] = str(giCtrl.GetSingleData(4))
+                row_data['Msg3'] = str(giCtrl.GetSingleData(5))
+                tr_data_output.append(row_data)
                 print(TRShow.GetErrorMessage())
                 if len(tr_data_output) == 0:
                     raise ValueError("에러 발생 로그 확인")
@@ -217,3 +262,28 @@ class indiApp(QMainWindow):
                     print("매수 및 매도 주문결과: ", tr_data_output)
             except ValueError as e:
                 self.callback_result[rqid] = 0
+
+        if TR_Name == "SABA231Q1":
+            nCnt = giCtrl.GetSingleRowCount()
+            print("nCnt : ",nCnt)
+            try:
+                for i in range(nCnt):
+                    row_data = []  # 한 행의 데이터를 저장할 리스트
+                    order_code = str(giCtrl.GetMultiData(i, 0)) # 주문 번호
+                    order_quantity = str(giCtrl.GetMultiData(i, 24)) # 체결수량  
+                    order_price = str(giCtrl.GetMultiData(i, 25))  # 체결단가
+
+                    row_data.append(order_code)
+                    row_data.append(order_quantity)
+                    row_data.append(order_price)
+
+                    tr_data_output.append(row_data)
+                print(TRShow.GetErrorMessage())
+                if len(tr_data_output) == 0:
+                    raise ValueError("에러 발생 로그 확인")
+                else:
+                    self.tempResult[rqid] = tr_data_output
+                    print(tr_data_output)
+            except ValueError as e:
+                self.tempResult[rqid] = 0
+

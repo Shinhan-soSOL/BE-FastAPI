@@ -20,7 +20,7 @@ async def send(message: Message):
     try:
         await producer.start()
         value_json = json.dumps(message.__dict__).encode('utf-8')
-        await producer.send_and_wait(topic=ACCOUNT_TOPIC, value=value_json)
+        await producer.send_and_wait(topic=ORDER_TOPIC, value=value_json)
 
         return JSONResponse(
             status_code=status.HTTP_201_CREATED,
@@ -58,7 +58,7 @@ async def send(message: Message):
         await producer.stop()
 
 async def consume():
-    consumer = AIOKafkaConsumer(ACCOUNT_TOPIC, loop=loop,
+    consumer = AIOKafkaConsumer(ORDER_TOPIC, loop=loop,
                                 bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS, group_id=KAFKA_CONSUMER_GROUP)
     await consumer.start()
     try:
@@ -67,27 +67,30 @@ async def consume():
             msg_dict = json.loads(msg_str)
             
             account_id = msg_dict["accountId"]
-            user_id = msg_dict["usreId"]
+            user_id = msg_dict["userId"]
             stockCode = msg_dict["stockCode"]
             quantity = msg_dict["quantity"] 
             currentBalance = msg_dict["currentBalance"] # 잔액
+            stockName = msg_dict["stockName"]
 
-            print(f'Received message with value: {stockCode} {quantity}')
+            print(f'Received message with value: {stockCode} {quantity} {account_id} {user_id} {currentBalance}')
             async with httpx.AsyncClient() as client:
                 order_data = {
                     "stockCode": stockCode,
+                    "stockName": stockName,
                     "quantity": quantity,
                     "currentBalance": currentBalance,
                     "user_id": user_id,
                     "account_id": account_id
                 }
                 response = await client.post('http://localhost:8001/order', json=order_data)
-                response2 = await client.get('http://localhost:8001/jango/{account_id}')
+                response2 = await client.get(f'http://localhost:8001/jango/{account_id}')
                 if response.status_code == 200:
                     print(f"API 호출 성공: {response.json()}")
                     print(f"API 호출 성공: {response2.json()}")
                 else:
                     print(f"API 호출 실패: {response.status_code}")
+                    print(f"API 호출 실패: {response2.status_code}")
 
     finally:
         await consumer.stop()
